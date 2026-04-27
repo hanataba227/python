@@ -32,6 +32,7 @@ pdf.set_margins(20, 20, 20)
 pdf.set_auto_page_break(auto=True, margin=20)
 
 pdf.add_font("regular", style="",  fname=FONT_REGULAR)
+pdf.add_font("regular", style="B", fname=FONT_BOLD) # for fpdf2 table headers
 pdf.add_font("bold",    style="",  fname=FONT_BOLD)
 pdf.add_font("mono",    style="",  fname=FONT_MONO)
 
@@ -83,22 +84,52 @@ def render_table(table_lines):
     if not rows:
         return
 
-    col_count = len(rows[0])
-    col_w = 170 / col_count
+    col_count = max(len(row) for row in rows)
+    # 빈 칸을 채워 길이가 일정하도록 맞춤
+    for i in range(len(rows)):
+        while len(rows[i]) < col_count:
+            rows[i].append("")
 
-    for i, row in enumerate(rows):
-        for cell in row:
-            if i == 0:
-                set_bold(9)
-                pdf.set_fill_color(240, 240, 240)
-                pdf.set_draw_color(200, 200, 200)
-                pdf.cell(col_w, 8, cell, border=1, fill=True)
-            else:
-                set_regular(9)
-                pdf.set_fill_color(255, 255, 255)
-                pdf.set_draw_color(200, 200, 200)
-                pdf.cell(col_w, 8, cell, border=1, fill=True)
-        pdf.ln()
+    col_lengths = [0] * col_count
+    for row in rows:
+        for j, cell in enumerate(row):
+            # 대략적인 글자 길이 계산 (한글=2, 영문/공백=1)
+            length = sum(2 if ord(c) > 127 else 1 for c in cell)
+            if length > col_lengths[j]:
+                col_lengths[j] = length
+                
+    total_len = sum(col_lengths)
+    if total_len > 0:
+        col_widths = tuple(170 * (l / total_len) for l in col_lengths)
+    else:
+        col_widths = tuple(170 / col_count for _ in range(col_count))
+
+    pdf.set_draw_color(200, 200, 200)
+    set_regular(9)
+    
+    with pdf.table(
+        col_widths=col_widths,
+        text_align="LEFT",
+        first_row_as_headings=False,
+        cell_fill_color=(255, 255, 255),
+        cell_fill_mode="ROWS",
+    ) as table:
+        for i, data_row in enumerate(rows):
+            row = table.row()
+            for datum in data_row:
+                # 마크다운 문법 정리 (**굵게**, `코드`, [링크](주소), <br> 줄바꿈)
+                datum = re.sub(r"\*\*([^*]+)\*\*", r"\1", datum)
+                datum = re.sub(r"`([^`]+)`", r"\1", datum)
+                datum = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", datum)
+                datum = re.sub(r"<br\s*/?>", "\n", datum, flags=re.IGNORECASE)
+
+                if i == 0:
+                    pdf.set_fill_color(240, 240, 240)
+                    pdf.set_font("regular", "B", 9)
+                else:
+                    pdf.set_fill_color(255, 255, 255)
+                    pdf.set_font("regular", "", 9)
+                row.cell(datum)
     pdf.ln(3)
 
 
